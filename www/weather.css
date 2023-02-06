@@ -14,3 +14,7 @@
 .well {
     padding: 10px;
 }
+#line_temp, #line_soil {
+    /* padding: 10px;
+    border: 1px solid #dedede; */
+}

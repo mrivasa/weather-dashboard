@@ -11,6 +11,7 @@ library(ggplot2)
 library(scales)
 library(gridExtra)
 library(jtools)
+theme_set(theme_minimal())
 
 # Loading the data
 weather <- as.data.frame(read_csv("data/weather.csv",
@@ -57,7 +58,9 @@ ui <- dashboardPage(
     fluidRow(
       column(
         width = 6,
-        plotOutput("line_temp")
+        div(
+          plotOutput("line_temp")
+        )
       ),
       column(
         width = 6,
@@ -126,16 +129,17 @@ server <- function(input, output, session) {
 
   # Display a line plot for temperature
   output$line_temp <- renderPlot({
-    ggplot(filtered_weather(), aes(x = time, y = temp_f)) +
-      geom_line() +
-      theme_apa()
+    ggplot(filtered_weather(), aes(x = time)) +
+      geom_line(aes(y = temp_f), color = "darkblue") +
+      geom_line(aes(y = heat_index_f, color = "pink")) +
+      labs(x = "Hours", y = "Temperature")
   })
 
   # Display a line plot for soil moisture
   output$line_soil <- renderPlot({
     ggplot(filtered_weather(), aes(x = time, y = soil_moisture_1)) +
       geom_line() +
-      theme_apa()
+      labs(x = "Hours", y = "Moisture")
   })
 }
 
