@@ -1,0 +1,16 @@
+.skin-green .main-sidebar {
+    background-color: #899499;
+}
+.skin-green .main-header .navbar {
+    background-color: #144225
+}
+.skin-green .main-header .logo {
+    background-color: #184f2c;
+}
+#display_selected_date {
+    font-size: 16pt;
+    font-weight: 600;
+}
+.well {
+    padding: 10px;
+}
