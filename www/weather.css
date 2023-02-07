@@ -10,6 +10,7 @@
 #display_selected_date {
     font-size: 16pt;
     font-weight: 600;
+    color: #36454F;
 }
 .well {
     padding: 10px;
@@ -19,7 +20,9 @@
     background-color: white;
     margin: 0 20px;
 }
-.plot-title {
+.panel-title {
     font-size: 16pt;
     font-weight: 500;
+    color: #36454F;
+    margin-bottom: 5px;
 }

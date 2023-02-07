@@ -8,10 +8,10 @@ library(DT)
 
 library(lubridate)
 library(ggplot2)
+library(plotly)
 library(scales)
 library(gridExtra)
 library(jtools)
-# theme_set(theme_minimal())
 
 # Loading the data
 weather <- as.data.frame(read_csv("data/weather.csv",
@@ -62,21 +62,22 @@ ui <- dashboardPage(
         column(
           width = 6,
           panel(
-            tags$p("Temperature by Hour of the Day", class = "plot-title"),
-            plotOutput("line_temp")
+            tags$p("Temperature by Hour of the Day", class = "panel-title"),
+            plotlyOutput("line_temp")
           )
         ),
         column(
           width = 6,
           panel(
-            tags$p("Soil Moisture by Hour of the Day", class = "plot-title"),
-            plotOutput("line_soil")
+            tags$p("Soil Moisture by Hour of the Day", class = "panel-title"),
+            plotlyOutput("line_soil")
           )
         )
       ),
       conditionalPanel(
         condition = "input.show_data",
         panel(
+            tags$p("Data Filtered by Selected Date", class = "panel-title"),
           DTOutput("weather_data")
         )
       )
@@ -160,7 +161,7 @@ server <- function(input, output, session) {
   })
 
   # Display a line plot for temperature
-  output$line_temp <- renderPlot({
+  output$line_temp <- renderPlotly({
     ggplot(filtered_weather(), aes(x = time)) +
       geom_line(aes(y = temp_f, color = "Temperature")) +
       geom_line(aes(y = heat_index_f, color = "Heat Index")) +
@@ -170,7 +171,7 @@ server <- function(input, output, session) {
   })
 
   # Display a line plot for soil moisture
-  output$line_soil <- renderPlot({
+  output$line_soil <- renderPlotly({
     ggplot(filtered_weather(), aes(x = time, y = soil_moisture_1)) +
       geom_line() +
       labs(x = "Hours", y = "Moisture")
