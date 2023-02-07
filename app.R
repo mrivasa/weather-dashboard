@@ -11,7 +11,7 @@ library(ggplot2)
 library(scales)
 library(gridExtra)
 library(jtools)
-theme_set(theme_minimal())
+# theme_set(theme_minimal())
 
 # Loading the data
 weather <- as.data.frame(read_csv("data/weather.csv",
@@ -61,23 +61,23 @@ ui <- dashboardPage(
       fluidRow(
         column(
           width = 6,
-          div(
+          panel(
+            tags$p("Temperature by Hour of the Day", class = "plot-title"),
             plotOutput("line_temp")
           )
         ),
         column(
           width = 6,
-          plotOutput("line_soil")
+          panel(
+            tags$p("Soil Moisture by Hour of the Day", class = "plot-title"),
+            plotOutput("line_soil")
+          )
         )
       ),
       conditionalPanel(
         condition = "input.show_data",
-        br(),
-        fluidRow(
-          div(
-            id = "dt_container",
-            DTOutput("weather_data")
-          )
+        panel(
+          DTOutput("weather_data")
         )
       )
     ),
@@ -162,9 +162,11 @@ server <- function(input, output, session) {
   # Display a line plot for temperature
   output$line_temp <- renderPlot({
     ggplot(filtered_weather(), aes(x = time)) +
-      geom_line(aes(y = temp_f), color = "darkblue") +
-      geom_line(aes(y = heat_index_f, color = "pink")) +
-      labs(x = "Hours", y = "Temperature")
+      geom_line(aes(y = temp_f, color = "Temperature")) +
+      geom_line(aes(y = heat_index_f, color = "Heat Index")) +
+      geom_line(aes(y = windchill_f, color = "Windchill")) +
+      labs(x = "Hours", y = "Temperature", color = "") +
+      theme(legend.position = "top")
   })
 
   # Display a line plot for soil moisture
@@ -176,7 +178,11 @@ server <- function(input, output, session) {
 
   # Display filtered data (TODO display data when user checks the box)
   output$weather_data <- renderDT({
-    datatable(filtered_weather(), options = list(scrollX = TRUE))
+    datatable(filtered_weather(), options = list(
+      scrollX = TRUE,
+      searching = FALSE,
+      pagelength = 50)
+    )
   })
 }
 

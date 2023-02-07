@@ -19,3 +19,7 @@
     background-color: white;
     margin: 0 20px;
 }
+.plot-title {
+    font-size: 16pt;
+    font-weight: 500;
+}
