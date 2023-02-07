@@ -14,7 +14,8 @@
 .well {
     padding: 10px;
 }
-#line_temp, #line_soil {
-    /* padding: 10px;
-    border: 1px solid #dedede; */
+#dt_container {
+    padding: 20px;
+    background-color: white;
+    margin: 0 20px;
 }

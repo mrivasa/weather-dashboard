@@ -47,37 +47,63 @@ ui <- dashboardPage(
         href = "weather.css"
       )
     ),
-    wellPanel(
-      htmlOutput("display_selected_date")
-    ),
-    fluidRow(
-      valueBoxOutput("temp"),
-      valueBoxOutput("rain"),
-      valueBoxOutput("soil")
-    ),
-    fluidRow(
-      column(
-        width = 6,
-        div(
-          plotOutput("line_temp")
+    conditionalPanel(
+      condition = "output.total_rows > 0",
+      wellPanel(
+        htmlOutput("display_selected_date")
+      ),
+      fluidRow(
+        valueBoxOutput(width = 3, "temp"),
+        valueBoxOutput(width = 3, "humidity"),
+        valueBoxOutput(width = 3, "rain"),
+        valueBoxOutput(width = 3, "soil")
+      ),
+      fluidRow(
+        column(
+          width = 6,
+          div(
+            plotOutput("line_temp")
+          )
+        ),
+        column(
+          width = 6,
+          plotOutput("line_soil")
         )
       ),
-      column(
-        width = 6,
-        plotOutput("line_soil")
+      conditionalPanel(
+        condition = "input.show_data",
+        br(),
+        fluidRow(
+          div(
+            id = "dt_container",
+            DTOutput("weather_data")
+          )
+        )
       )
     ),
-    br(),
-    fluidRow(
-      DTOutput("weather_data")
+    conditionalPanel(
+      condition = "output.total_rows <= 0",
+      alert(
+        status = "info",
+        tags$b("Note:"), "There is no data available for that date."
+      )
     )
   )
 )
 
 server <- function(input, output, session) {
+  # Filter dataframe based on selcted date
   filtered_weather <- reactive({
     weather[weather$date == input$selected_date, ]
   })
+
+  # This reactive function is used to show/hide panels when data is available
+  output$total_rows <- reactive({
+    nrow(filtered_weather())
+  })
+
+  # Taken from: https://shiny.rstudio.com/articles/dynamic-ui.html
+  outputOptions(output, "total_rows", suspendWhenHidden = FALSE)
 
   # Display selected date
   output$display_selected_date <- renderUI({
@@ -97,6 +123,17 @@ server <- function(input, output, session) {
       "Average Temperature",
       icon = icon("temperature-half"),
       color = box_color
+    )
+  })
+
+  # Display average humidity
+  output$humidity <- renderValueBox({
+    avg <- round(mean(filtered_weather()$relative_humidity, na.rm = TRUE), 0)
+    valueBox(
+      paste0(avg, " %"),
+      "Average Relative Humidity",
+      icon = icon("droplet"),
+      color = "olive"
     )
   })
 
@@ -122,11 +159,6 @@ server <- function(input, output, session) {
     )
   })
 
-  # Display filtered data (TODO display data when user checks the box)
-  output$weather_data <- renderDT({
-    datatable(filtered_weather(), options = list(scrollX = TRUE))
-  })
-
   # Display a line plot for temperature
   output$line_temp <- renderPlot({
     ggplot(filtered_weather(), aes(x = time)) +
@@ -140,6 +172,11 @@ server <- function(input, output, session) {
     ggplot(filtered_weather(), aes(x = time, y = soil_moisture_1)) +
       geom_line() +
       labs(x = "Hours", y = "Moisture")
+  })
+
+  # Display filtered data (TODO display data when user checks the box)
+  output$weather_data <- renderDT({
+    datatable(filtered_weather(), options = list(scrollX = TRUE))
   })
 }
 
