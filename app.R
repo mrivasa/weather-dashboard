@@ -5,7 +5,6 @@ library(fontawesome)
 library(readr)
 library(dplyr)
 library(DT)
-
 library(lubridate)
 library(ggplot2)
 library(plotly)
@@ -74,10 +73,19 @@ ui <- dashboardPage(
           )
         )
       ),
+      fluidRow(
+        column(
+          width = 12,
+          panel(
+            tags$p("Average Soil Moisture Over Time", class = "panel-title"),
+            plotlyOutput("week_soil")
+          )
+        )
+      ),
       conditionalPanel(
         condition = "input.show_data",
         panel(
-            tags$p("Data Filtered by Selected Date", class = "panel-title"),
+          tags$p("Data Filtered by Selected Date", class = "panel-title"),
           DTOutput("weather_data")
         )
       )
@@ -97,6 +105,10 @@ server <- function(input, output, session) {
   filtered_weather <- reactive({
     weather[weather$date == input$selected_date, ]
   })
+
+  # week_weather <- reactive({
+  #   weather[(week(weather$date) == week(input$selected_date)) & (year(weather$date == year(input$selected_date))), ]
+  # })
 
   # This reactive function is used to show/hide panels when data is available
   output$total_rows <- reactive({
@@ -150,13 +162,14 @@ server <- function(input, output, session) {
   })
 
   # Display average soil moisture for selected date
+  # red, yellow, aqua, blue, light-blue, green, navy, teal, olive, lime, orange, fuchsia, purple, maroon, black.
   output$soil <- renderValueBox({
     avg <- round(mean(filtered_weather()$soil_moisture_1, na.rm = TRUE), 0)
     valueBox(
       paste0(avg, " cb"),
       "Average Soil Moisture",
       icon = icon("water"),
-      color = "olive"
+      color = "maroon"
     )
   })
 
@@ -166,7 +179,7 @@ server <- function(input, output, session) {
       geom_line(aes(y = temp_f, color = "Temperature")) +
       geom_line(aes(y = heat_index_f, color = "Heat Index")) +
       geom_line(aes(y = windchill_f, color = "Windchill")) +
-      labs(x = "Hours", y = "Temperature", color = "") +
+      labs(x = NULL, y = "Temperature", color = "") +
       theme(legend.position = "top")
   })
 
@@ -174,7 +187,28 @@ server <- function(input, output, session) {
   output$line_soil <- renderPlotly({
     ggplot(filtered_weather(), aes(x = time, y = soil_moisture_1)) +
       geom_line() +
-      labs(x = "Hours", y = "Moisture")
+      labs(x = NULL, y = "Moisture")
+  })
+
+  # Display daily moisture average for all days of the week
+  output$week_soil <- renderPlotly({
+    df_temp <- data.frame(date = weather$date, moisture = weather$soil_moisture_1)
+
+    by_day <- df_temp %>%
+      group_by(date) %>%
+      summarise(avg_moisture = mean(moisture))
+
+    the_day <- df_temp[df_temp$date == input$selected_date, ]
+
+    day_avg <- round(mean(the_day$moisture),0)
+
+    all_time_avg <- round(mean(weather$soil_moisture_1),0)
+
+    ggplot() +
+      geom_col(by_day, mapping = aes(x = date, y = avg_moisture)) +
+      geom_hline(aes(yintercept = day_avg, color = "Day Average")) +
+      geom_hline(aes(yintercept = all_time_avg, color = "All-time Average")) +
+      labs(color = NULL, x = NULL, y = "Average Moisture")
   })
 
   # Display filtered data (TODO display data when user checks the box)
@@ -182,8 +216,8 @@ server <- function(input, output, session) {
     datatable(filtered_weather(), options = list(
       scrollX = TRUE,
       searching = FALSE,
-      pagelength = 50)
-    )
+      pagelength = 50
+    ))
   })
 }
 
