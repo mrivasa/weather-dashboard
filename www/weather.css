@@ -8,8 +8,7 @@
     background-color: #184f2c;
 }
 #display_selected_date {
-    font-size: 16pt;
-    font-weight: 600;
+    font-weight: 300;
     color: #36454F;
 }
 .well {
@@ -24,5 +23,20 @@
     font-size: 16pt;
     font-weight: 500;
     color: #36454F;
+    margin-bottom: 5px;
+}
+#date_range_header {
+    font-weight: 400;
+}
+#date_range {
+    margin-bottom: 10px;
+}
+.info-box-text {
+    font-weight: 500;
+}
+.info-box-number {
+    font-size: 21px;
+}
+#input_controls div{
     margin-bottom: 5px;
 }

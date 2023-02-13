@@ -22,21 +22,17 @@ weather <- as.data.frame(read_csv("data/weather.csv",
 ))
 
 # Finding max and min dates from data (needed for the date picker)
-min_calendar_date <- min(weather$date, na.rm = TRUE)
 max_calendar_date <- max(weather$date, na.rm = TRUE)
+min_calendar_date <- min(weather$date, na.rm = TRUE)
 
 ui <- dashboardPage(
   skin = "green",
   dashboardHeader(title = "Southern.edu Weather"),
   dashboardSidebar(
-    dateInput("selected_date",
-      label = h4("Select Date"),
-      value = max_calendar_date,
-      format = "mm/dd/yyyy",
-      min = min_calendar_date,
-      max = max_calendar_date
-    ),
-    checkboxInput("show_data", label = "Display data")
+    sidebarMenu(
+      menuItem("Date Range", tabName = "selected_dates", selected = TRUE),
+      menuItem("Grow Weather", tabName = "grow_weather")
+    )
   ),
   dashboardBody(
     tags$head(
@@ -46,69 +42,119 @@ ui <- dashboardPage(
         href = "weather.css"
       )
     ),
-    conditionalPanel(
-      condition = "output.total_rows > 0",
-      wellPanel(
-        htmlOutput("display_selected_date")
-      ),
-      fluidRow(
-        valueBoxOutput(width = 3, "temp"),
-        valueBoxOutput(width = 3, "humidity"),
-        valueBoxOutput(width = 3, "rain"),
-        valueBoxOutput(width = 3, "soil")
-      ),
-      fluidRow(
-        column(
-          width = 6,
-          panel(
-            tags$p("Temperature by Hour of the Day", class = "panel-title"),
-            plotlyOutput("line_temp")
+    tabItems(
+      tabItem(
+        tabName = "selected_dates",
+        wellPanel(
+          fluidRow(
+            column(
+              width = 6,
+              dateRangeInput("date_range",
+                label = span("Date Range:", id = "date_range_header"),
+                start = max_calendar_date - 6,
+                end = max_calendar_date,
+                format = "mm/dd/yyyy",
+                min = min_calendar_date,
+                max = max_calendar_date
+              ),
+              checkboxInput("show_data", label = "Display data"),
+              id = "input_controls"
+            ),
+            column(
+              width = 6,
+              br(),
+              htmlOutput("display_selected_date"),
+              htmlOutput("display_summary")
+            )
           )
         ),
-        column(
-          width = 6,
-          panel(
-            tags$p("Soil Moisture by Hour of the Day", class = "panel-title"),
-            plotlyOutput("line_soil")
+        conditionalPanel(
+          condition = "output.total_rows > 0",
+          fluidRow(
+            infoBoxOutput("temp_info", width = 3),
+            infoBoxOutput("humidity_info", width = 3),
+            infoBoxOutput("rain_info", width = 3),
+            infoBoxOutput("soil_info", width = 3)
+          ),
+          fluidRow(
+            column(
+              width = 6,
+              panel(
+                tags$p("Average Temperature", class = "panel-title"),
+                plotlyOutput("line_temp")
+              )
+            ),
+            column(
+              width = 6,
+              panel(
+                tags$p("Soil Moisture", class = "panel-title"),
+                plotlyOutput("line_soil")
+              )
+            )
+          ),
+          fluidRow(
+            column(
+              width = 12,
+              panel(
+                tags$p("Average Soil Moisture Over Time", class = "panel-title"),
+                plotlyOutput("week_soil")
+              )
+            )
+          ),
+          conditionalPanel(
+            condition = "input.show_data",
+            panel(
+              tags$p("Data Filtered by Selected Date", class = "panel-title"),
+              DTOutput("weather_data")
+            )
+          )
+        ),
+        conditionalPanel(
+          condition = "output.total_rows <= 0",
+          alert(
+            status = "info",
+            tags$b("Note:"), "There is no data available for the selected date range."
           )
         )
       ),
-      fluidRow(
-        column(
-          width = 12,
-          panel(
-            tags$p("Average Soil Moisture Over Time", class = "panel-title"),
-            plotlyOutput("week_soil")
-          )
+      tabItem(
+        tabName = "grow_weather",
+        fluidRow(
+          alert("Grow weather information will be displayed here!")
         )
-      ),
-      conditionalPanel(
-        condition = "input.show_data",
-        panel(
-          tags$p("Data Filtered by Selected Date", class = "panel-title"),
-          DTOutput("weather_data")
-        )
-      )
-    ),
-    conditionalPanel(
-      condition = "output.total_rows <= 0",
-      alert(
-        status = "info",
-        tags$b("Note:"), "There is no data available for that date."
       )
     )
   )
 )
 
+# Helper function to render temperature plot.
+temperature_plot <- function(data_source, x_axis_column) {
+  ggplot(data_source, aes(x = get(x_axis_column))) +
+    geom_line(aes(y = temp_f, color = "Temperature")) +
+    geom_line(aes(y = heat_index_f, color = "Heat Index")) +
+    geom_line(aes(y = windchill_f, color = "Windchill")) +
+    theme(legend.position = "top")
+}
+
 server <- function(input, output, session) {
-  # Filter dataframe based on selcted date
+  # Filter dataframe based on selcted date range
   filtered_weather <- reactive({
-    weather[weather$date == input$selected_date, ]
+    weather[weather$date >= input$date_range[1] & weather$date <= input$date_range[2], ]
   })
 
-  # week_weather <- reactive({
-  #   weather[(week(weather$date) == week(input$selected_date)) & (year(weather$date == year(input$selected_date))), ]
-  # })
+  # Most recent date will be today's date if data is available for that date
+  most_recent_date <- reactive({
+    temp <- Sys.Date()
+    if (temp > max_calendar_date) {
+      temp <- max_calendar_date
+    }
+    temp
+  })
+
+  # Get weather info for today's date if available
+  most_recent_weather <- reactive({
+    weather[weather$date == most_recent_date(), ]
+  })
 
   # This reactive function is used to show/hide panels when data is available
   output$total_rows <- reactive({
@@ -120,74 +166,99 @@ server <- function(input, output, session) {
 
   # Display selected date
   output$display_selected_date <- renderUI({
-    todays_date <- format(input$selected_date, format = "%A, %B %d, %Y")
-    HTML(paste(todays_date))
+    start_date <- format(input$date_range[1], format = "%A, %B %d, %Y")
+    end_date <- format(input$date_range[2], format = "%A, %B %d, %Y")
+    HTML(sprintf("[%s] to [%s]", start_date, end_date))
+  })
+
+  output$display_summary <- renderUI({
+    total_days <- difftime(input$date_range[2] + 1, input$date_range[1], units = "days")
+    HTML(sprintf("%s days | %s observations", total_days, nrow(filtered_weather())))
   })
 
   # Display average temp for the selected date
-  output$temp <- renderValueBox({
+  output$temp_info <- renderInfoBox({
     avg <- round(mean(filtered_weather()$temp_f, na.rm = TRUE), 0)
+    min_t <- round(min(filtered_weather()$temp_f, na.rm = TRUE), 0)
+    max_t <- round(max(filtered_weather()$temp_f, na.rm = TRUE), 0)
     box_color <- "light-blue"
     if (avg >= 80) {
       box_color <- "yellow"
     }
-    valueBox(
-      paste0(avg, " °F"),
-      "Average Temperature",
-      icon = icon("temperature-half"),
-      color = box_color
+    infoBox(
+      title = "Avg. Temperature",
+      value = paste0(avg, " °F"),
+      subtitle = sprintf("Max: %s | Min: %s", max_t, min_t),
+      color = box_color,
+      fill = TRUE,
+      icon = icon("temperature-half")
     )
   })
 
   # Display average humidity
-  output$humidity <- renderValueBox({
+  output$humidity_info <- renderInfoBox({
     avg <- round(mean(filtered_weather()$relative_humidity, na.rm = TRUE), 0)
-    valueBox(
-      paste0(avg, " %"),
-      "Average Relative Humidity",
+    min_h <- round(min(filtered_weather()$relative_humidity, na.rm = TRUE), 0)
+    max_h <- round(max(filtered_weather()$relative_humidity, na.rm = TRUE), 0)
+    infoBox(
+      title = "Avg. Relative Humidity",
+      value = paste0(avg, " %"),
+      subtitle = sprintf("Max: %s | Min: %s", max_h, min_h),
       icon = icon("droplet"),
-      color = "olive"
+      color = "olive",
+      fill = TRUE
     )
   })
 
   # Display total rain for the selected date
-  output$rain <- renderValueBox({
+  output$rain_info <- renderInfoBox({
     total <- sum(filtered_weather()$rain_rate_in_per_hr)
-    valueBox(
-      paste0(total, " in"),
-      "Total Rain",
+    avg_r <- round(mean(filtered_weather()$rain_day_in), 2)
+    infoBox(
+      title = "Total Rain",
+      value = paste0(total, " in"),
+      subtitle = sprintf("Daily Avg. %s", avg_r),
       icon = icon("cloud-rain"),
-      color = "aqua"
+      color = "aqua",
+      fill = TRUE
     )
   })
 
   # Display average soil moisture for selected date
-  # red, yellow, aqua, blue, light-blue, green, navy, teal, olive, lime, orange, fuchsia, purple, maroon, black.
-  output$soil <- renderValueBox({
+  output$soil_info <- renderInfoBox({
     avg <- round(mean(filtered_weather()$soil_moisture_1, na.rm = TRUE), 0)
-    valueBox(
-      paste0(avg, " cb"),
-      "Average Soil Moisture",
+    max_s <- round(max(filtered_weather()$soil_moisture_1, na.rm = TRUE), 0)
+    min_s <- round(min(filtered_weather()$soil_moisture_1, na.rm = TRUE), 0)
+    infoBox(
+      title = "Avg. Soil Moisture",
+      value = paste0(avg, " cb"),
+      subtitle = sprintf("Max: %s | Min: %s", max_s, min_s),
       icon = icon("water"),
-      color = "maroon"
+      color = "maroon",
+      fill = TRUE
     )
   })
 
   # Display a line plot for temperature
   output$line_temp <- renderPlotly({
-    ggplot(filtered_weather(), aes(x = time)) +
-      geom_line(aes(y = temp_f, color = "Temperature")) +
-      geom_line(aes(y = heat_index_f, color = "Heat Index")) +
-      geom_line(aes(y = windchill_f, color = "Windchill")) +
-      labs(x = NULL, y = "Temperature", color = "") +
-      theme(legend.position = "top")
+    days <- filtered_weather() %>% count(date)
+    if (nrow(days) == 1) {
+      plot <- temperature_plot(filtered_weather(), "time")
+      plot +
+        labs(x = "Hours of the Day", y = "Temperature", color = "")
+    } else {
+      data_source <- filtered_weather() %>% group_by(date) %>% summarise_at(c("temp_f", "heat_index_f", "windchill_f"), mean)
+      plot <- temperature_plot(data_source, "date")
+      plot +
+        labs(x = "Selected Date Range", y = "Temperature", color = "")
+    }
   })
 
   # Display a line plot for soil moisture
   output$line_soil <- renderPlotly({
-    ggplot(filtered_weather(), aes(x = time, y = soil_moisture_1)) +
-      geom_line() +
-      labs(x = NULL, y = "Moisture")
+    ggplot(filtered_weather(), aes(x = `date and time`)) +
+        geom_line(aes(y = soil_moisture_1)) +
+        labs(x = "Selected Date Range", y = "Moisture")
   })
 
   # Display daily moisture average for all days of the week
@@ -198,11 +269,11 @@ server <- function(input, output, session) {
       group_by(date) %>%
       summarise(avg_moisture = mean(moisture))
 
-    the_day <- df_temp[df_temp$date == input$selected_date, ]
+    the_day <- df_temp[df_temp$date == most_recent_date(), ]
 
-    day_avg <- round(mean(the_day$moisture),0)
+    day_avg <- round(mean(the_day$moisture), 0)
 
-    all_time_avg <- round(mean(weather$soil_moisture_1),0)
+    all_time_avg <- round(mean(weather$soil_moisture_1), 0)
 
     ggplot() +
       geom_col(by_day, mapping = aes(x = date, y = avg_moisture)) +
@@ -211,7 +282,7 @@ server <- function(input, output, session) {
       labs(color = NULL, x = NULL, y = "Average Moisture")
   })
 
-  # Display filtered data (TODO display data when user checks the box)
+  # Display filtered data
   output$weather_data <- renderDT({
     datatable(filtered_weather(), options = list(
       scrollX = TRUE,
