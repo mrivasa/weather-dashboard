@@ -80,7 +80,7 @@ ui <- dashboardPage(
             column(
               width = 6,
               panel(
-                tags$p("Average Temperature", class = "panel-title"),
+                tags$p("Temperature", class = "panel-title"),
                 plotlyOutput("line_temp")
               )
             ),
@@ -126,15 +126,6 @@ ui <- dashboardPage(
     )
   )
 )
-
-# Helper function to render temperature plot.
-temperature_plot <- function(data_source, x_axis_column) {
-  ggplot(data_source, aes(x = get(x_axis_column))) +
-    geom_line(aes(y = temp_f, color = "Temperature")) +
-    geom_line(aes(y = heat_index_f, color = "Heat Index")) +
-    geom_line(aes(y = windchill_f, color = "Windchill")) +
-    theme(legend.position = "top")
-}
 
 server <- function(input, output, session) {
   # Filter dataframe based on selcted date range
@@ -241,24 +232,19 @@ server <- function(input, output, session) {
 
   # Display a line plot for temperature
   output$line_temp <- renderPlotly({
-    days <- filtered_weather() %>% count(date)
-    if (nrow(days) == 1) {
-      plot <- temperature_plot(filtered_weather(), "time")
-      plot +
-        labs(x = "Hours of the Day", y = "Temperature", color = "")
-    } else {
-      data_source <- filtered_weather() %>% group_by(date) %>% summarise_at(c("temp_f", "heat_index_f", "windchill_f"), mean)
-      plot <- temperature_plot(data_source, "date")
-      plot +
-        labs(x = "Selected Date Range", y = "Temperature", color = "")
-    }
+    ggplot(filtered_weather(), aes(x = `date and time`)) +
+      geom_line(aes(y = temp_f, color = "Temperature")) +
+      geom_line(aes(y = heat_index_f, color = "Heat Index")) +
+      geom_line(aes(y = windchill_f, color = "Windchill")) +
+      theme(legend.position = "top") +
+      labs(x = NULL, y = "Temperature", color = "")
   })
 
   # Display a line plot for soil moisture
   output$line_soil <- renderPlotly({
     ggplot(filtered_weather(), aes(x = `date and time`)) +
         geom_line(aes(y = soil_moisture_1)) +
-        labs(x = "Selected Date Range", y = "Moisture")
+        labs(x = NULL, y = "Moisture")
   })
 
   # Display daily moisture average for all days of the week
