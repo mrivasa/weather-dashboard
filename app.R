@@ -199,7 +199,7 @@ server <- function(input, output, session) {
         max_temp_c = max(temp_c),
         min_temp_c = min(temp_c),
         gdd_f = ((max_temp + min_temp)/2-input$base),
-        gdd_c = ((max_temp_c + min_temp_c)/2-input$base),
+        gdd_c = ((max_temp_c + min_temp_c)/2-((input$base - 32) * 5/9)),
       ) %>%
       mutate(
         gdd_f = case_when(gdd_f <= 0 ~ 0, gdd_f > 0 ~ gdd_f),
@@ -331,8 +331,12 @@ server <- function(input, output, session) {
 
   # Display a line plot for growing degree days
   output$growing_temp <- renderPlotly({
+    scale <- "gdd_f"
+    if(input$scale == 2){
+      scale <- "gdd_c"
+    }
     ggplot(grow_deg_day(), aes(x = date)) +
-      geom_line(aes(y = gdd_f)) +
+      geom_line(aes_string(y = scale)) +
       labs(x = NULL, y = "Degrees")
   })
 }
