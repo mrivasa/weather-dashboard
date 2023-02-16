@@ -120,7 +120,41 @@ ui <- dashboardPage(
       tabItem(
         tabName = "grow_weather",
         fluidRow(
-          alert("Grow weather information will be displayed here!")
+          column(
+            width = 4,
+            selectInput(
+              "year",
+              label = "Select Year",
+              choices = (unique(year(weather$date)))
+            )
+          ),
+          column(
+            width = 4,
+            numericInput(
+              "base",
+              label = "Base Temperature",
+              value = 50
+            )
+          ),
+          column(
+            width = 3,
+            radioButtons(
+              "scale",
+              label = "Temperature Scale",
+              choices = list("Farenheit" = 1, "Celsius" = 2),
+              selected = 1,
+              inline = TRUE
+            )
+          )
+        ),
+        fluidRow(
+          column(
+            width = 12,
+            panel(
+              tags$p("Growing Degree Days", class = "panel-title"),
+              plotlyOutput("growing_temp")
+            )
+          )
         )
       )
     )
@@ -142,11 +176,6 @@ server <- function(input, output, session) {
     temp
   })
 
-  # Get weather info for today's date if available
-  most_recent_weather <- reactive({
-    weather[weather$date == most_recent_date(), ]
-  })
-
   # This reactive function is used to show/hide panels when data is available
   output$total_rows <- reactive({
     nrow(filtered_weather())
@@ -154,6 +183,29 @@ server <- function(input, output, session) {
 
   # Taken from: https://shiny.rstudio.com/articles/dynamic-ui.html
   outputOptions(output, "total_rows", suspendWhenHidden = FALSE)
+
+  # Filter data by selected year
+  filtered_year <- reactive({
+    weather[year(weather$date) == input$year,]
+  })
+
+  # Group by date. Calculate GDD (daily max + daily min / 2 - base)
+  grow_deg_day <- reactive({
+    filtered_year() %>%
+      group_by(date) %>%
+      summarise(
+        max_temp = max(temp_f),
+        min_temp = min(temp_f),
+        max_temp_c = max(temp_c),
+        min_temp_c = min(temp_c),
+        gdd_f = ((max_temp + min_temp)/2-input$base),
+        gdd_c = ((max_temp_c + min_temp_c)/2-input$base),
+      ) %>%
+      mutate(
+        gdd_f = case_when(gdd_f <= 0 ~ 0, gdd_f > 0 ~ gdd_f),
+        gdd_c = case_when(gdd_c <= 0 ~ 0, gdd_c > 0 ~ gdd_c)
+      )
+  })
 
   # Display selected date
   output$display_selected_date <- renderUI({
@@ -243,8 +295,8 @@ server <- function(input, output, session) {
   # Display a line plot for soil moisture
   output$line_soil <- renderPlotly({
     ggplot(filtered_weather(), aes(x = `date and time`)) +
-        geom_line(aes(y = soil_moisture_1)) +
-        labs(x = NULL, y = "Moisture")
+      geom_line(aes(y = soil_moisture_1)) +
+      labs(x = NULL, y = "Moisture")
   })
 
   # Display daily moisture average for all days of the week
@@ -275,6 +327,13 @@ server <- function(input, output, session) {
       searching = FALSE,
       pagelength = 50
     ))
+  })
+
+  # Display a line plot for growing degree days
+  output$growing_temp <- renderPlotly({
+    ggplot(grow_deg_day(), aes(x = date)) +
+      geom_line(aes(y = gdd_f)) +
+      labs(x = NULL, y = "Degrees")
   })
 }
 
