@@ -212,7 +212,7 @@ server <- function(input, output, session) {
   # Filter data by selected year
   filtered_year <- reactive({
     query <- stringr::str_interp('{ "year": "${input$year}" }')
-    fields <- '{"date_and_time":1, "date": 1, "temp_f": 1, "temp_c": 1}'
+    fields <- '{"date_and_time":1, "date": 1, "temp_f": { "$ifNull": ["$temp_f", "$davis_current_observation.temp_in_f"] }, "temp_c": { "$ifNull": ["$temp_c", 0] } }'
     load_data(query, fields)
   })
 
@@ -231,10 +231,10 @@ server <- function(input, output, session) {
     filtered_year() %>%
       group_by(date) %>%
       summarise(
-        max_temp = max(temp_f),
-        min_temp = min(temp_f),
-        max_temp_c = max(temp_c),
-        min_temp_c = min(temp_c),
+        max_temp = max(temp_f, na.rm = TRUE),
+        min_temp = min(temp_f, na.rm = TRUE),
+        max_temp_c = max(temp_c, na.rm = TRUE),
+        min_temp_c = min(temp_c, na.rm = TRUE),
         gdd_f = ((max_temp + min_temp) / 2 - 50),
         gdd_c = ((max_temp_c + min_temp_c) / 2 - 10),
       ) %>%

@@ -42,7 +42,7 @@ load_data <- function(qry, return_fields = all_fields) {
     }
     df <- df %>% mutate(
         date_and_time = ymd_hms(date_and_time),
-        date = mdy(date)
+        date = as.Date(date, format = "%m/%d/%Y")
     )
     return(df)
 }
