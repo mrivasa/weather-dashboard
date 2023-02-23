@@ -1,3 +1,6 @@
+html {
+    scroll-behavior: smooth;
+}
 .skin-green .main-sidebar {
     background-color: #899499;
 }
@@ -38,5 +41,16 @@
     font-size: 21px;
 }
 #input_controls div{
+    margin-bottom: 5px;
+}
+.navbar-nav>.messages-menu>.dropdown-menu>li .menu>li>a {
+    color: #000000;
+    /* overflow: hidden; */
+    white-space: normal !important;
+}
+#more-info-list {
+    list-style: none;
+}
+#more-info-list li {
     margin-bottom: 5px;
 }

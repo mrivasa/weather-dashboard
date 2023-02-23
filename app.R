@@ -1,37 +1,29 @@
-library(shiny)
-library(shinyWidgets)
-library(shinydashboard)
-library(fontawesome)
-library(readr)
-library(dplyr)
-library(DT)
-library(lubridate)
-library(ggplot2)
-library(plotly)
-library(scales)
-library(gridExtra)
-library(jtools)
-
-# Loading the data
-weather <- as.data.frame(read_csv("data/weather.csv",
-  col_types = cols(
-    date = col_date(format = "%m/%d/%Y"),
-    `date and time` = col_datetime(format = "%m/%d/%Y %H:%M:%S %p"),
-    time = col_time(format = "%H:%M:%S")
-  )
-))
+# Load libraries and create database connection and data access methods
+source("global.r", local = TRUE)
 
 # Finding max and min dates from data (needed for the date picker)
-max_calendar_date <- max(weather$date, na.rm = TRUE)
-min_calendar_date <- min(weather$date, na.rm = TRUE)
+max_calendar_date <- get_max_or_min_date(-1)
+min_calendar_date <- get_max_or_min_date(1)
 
+# UI definition
 ui <- dashboardPage(
   skin = "green",
-  dashboardHeader(title = "Southern.edu Weather"),
+  dashboardHeader(
+    title = "Southern.edu Weather",
+    tags$li(
+      actionLink(
+        "more_info",
+        label = NULL,
+        icon = icon("circle-info")
+      ),
+      class = "dropdown"
+    )
+  ),
   dashboardSidebar(
     sidebarMenu(
-      menuItem("Date Range", tabName = "selected_dates", selected = TRUE),
-      menuItem("Grow Weather", tabName = "grow_weather")
+      menuItem("Weather Details", tabName = "selected_dates", icon = icon("umbrella"), selected = TRUE),
+      menuItem("Grow Weather", tabName = "grow_weather", icon = icon("leaf")),
+      menuItem("Download Data", tabName = "download_data", icon = icon("download"))
     )
   ),
   dashboardBody(
@@ -40,6 +32,9 @@ ui <- dashboardPage(
         rel = "stylesheet",
         type = "text/css",
         href = "weather.css"
+      ),
+      tags$script(
+        src = "scroll.js"
       )
     ),
     tabItems(
@@ -51,13 +46,13 @@ ui <- dashboardPage(
               width = 6,
               dateRangeInput("date_range",
                 label = span("Date Range:", id = "date_range_header"),
-                start = max_calendar_date - 6,
+                start = as.Date(max_calendar_date) - 6,
                 end = max_calendar_date,
                 format = "mm/dd/yyyy",
                 min = min_calendar_date,
                 max = max_calendar_date
               ),
-              checkboxInput("show_data", label = "Display data"),
+              checkboxInput("show_data", label = "Display data (scroll down)"),
               id = "input_controls"
             ),
             column(
@@ -87,8 +82,16 @@ ui <- dashboardPage(
             column(
               width = 6,
               panel(
-                tags$p("Soil Moisture", class = "panel-title"),
+                tags$p(tags$span("Soil Moisture "), icon("circle-info", id = "soil_info_icon"), class = "panel-title"),
                 plotlyOutput("line_soil")
+              ),
+              bsPopover(
+                id = "soil_info_icon",
+                title = "What is soil moisture?",
+                content = paste0("The Davis Instruments sensor measures on a scale of 0 (fully wet) to 200 (fully dry) centibars.  The sensor measures the vacuum created in the soil by the lack of moisture."),
+                placement = "right",
+                trigger = "click",
+                options = list(container = "body")
               )
             )
           ),
@@ -105,7 +108,8 @@ ui <- dashboardPage(
             condition = "input.show_data",
             panel(
               tags$p("Data Filtered by Selected Date", class = "panel-title"),
-              DTOutput("weather_data")
+              DTOutput("weather_data"),
+              id = "data_panel"
             )
           )
         ),
@@ -119,31 +123,29 @@ ui <- dashboardPage(
       ),
       tabItem(
         tabName = "grow_weather",
-        fluidRow(
-          column(
-            width = 4,
-            selectInput(
-              "year",
-              label = "Select Year",
-              choices = (unique(year(weather$date)))
-            )
-          ),
-          column(
-            width = 4,
-            numericInput(
-              "base",
-              label = "Base Temperature",
-              value = 50
-            )
-          ),
-          column(
-            width = 3,
-            radioButtons(
-              "scale",
-              label = "Temperature Scale",
-              choices = list("Farenheit" = 1, "Celsius" = 2),
-              selected = 1,
-              inline = TRUE
+        wellPanel(
+          fluidRow(
+            column(
+              width = 4,
+              selectInput(
+                "year",
+                label = "Select Year",
+                choices = get_unique_years()
+              )
+            ),
+            column(
+              width = 4,
+              radioButtons(
+                "scale",
+                label = "Temperature Scale",
+                choices = list("Farenheit" = 1, "Celsius" = 2),
+                selected = 1,
+                inline = TRUE
+              )
+            ),
+            column(
+              width = 12,
+              tags$p("Note: Cumulative Growing Degree Days Data are not accurate for 2019 or for February 4, 2020 - December 31, 2020 due to incomplete data.")
             )
           )
         ),
@@ -155,26 +157,49 @@ ui <- dashboardPage(
               plotlyOutput("growing_temp")
             )
           )
+        ),
+        fluidRow(
+          column(
+            width = 12,
+            panel(
+              tags$p("Growing Degree Days - Data", class = "panel-title"),
+              DTOutput("gdd_data")
+            )
+          )
+        )
+      ),
+      tabItem(
+        tabName = "download_data",
+        wellPanel(
+          fluidRow(
+            column(
+              width = 6,
+              dateRangeInput("date_range_download",
+                label = span("Date Range:", id = "date_range_header"),
+                start = as.Date(max_calendar_date) - 6,
+                end = max_calendar_date,
+                format = "mm/dd/yyyy",
+                min = min_calendar_date,
+                max = max_calendar_date
+              ),
+              downloadButton("download", "Download", icon = icon("download"), class = "btn-success")
+            )
+          )
         )
       )
     )
   )
 )
 
+# Server code
 server <- function(input, output, session) {
   # Filter dataframe based on selcted date range
   filtered_weather <- reactive({
-    weather[weather$date >= input$date_range[1] & weather$date <= input$date_range[2], ]
-  })
-
-  # Most recent date will be today's date if data is available for that date
-  most_recent_date <- reactive({
-    temp <- Sys.Date()
-    if (temp > max_calendar_date) {
-      temp <- max_calendar_date
-    }
-    temp
-  })
+    date2 <- input$date_range[2] + 1
+    query <- stringr::str_interp('{ "date_and_time": { "$gte": "${input$date_range[1]}", "$lte": "${date2}"} }')
+    load_data(query)
+  }) %>%
+    bindCache(input$date_range)
 
   # This reactive function is used to show/hide panels when data is available
   output$total_rows <- reactive({
@@ -186,7 +211,19 @@ server <- function(input, output, session) {
 
   # Filter data by selected year
   filtered_year <- reactive({
-    weather[year(weather$date) == input$year,]
+    query <- stringr::str_interp('{ "year": "${input$year}" }')
+    fields <- '{"date_and_time":1, "date": 1, "temp_f": 1, "temp_c": 1}'
+    load_data(query, fields)
+  })
+
+  # "On-click" event listener for more_info button in header
+  observeEvent(input$more_info, {
+    showModal(modalDialog(
+      includeHTML("www/moreinfo.html"),
+      title = "Southern.edu Weather Dashboard",
+      easyClose = TRUE,
+      footer = modalButton("Got It!")
+    ))
   })
 
   # Group by date. Calculate GDD (daily max + daily min / 2 - base)
@@ -198,12 +235,14 @@ server <- function(input, output, session) {
         min_temp = min(temp_f),
         max_temp_c = max(temp_c),
         min_temp_c = min(temp_c),
-        gdd_f = ((max_temp + min_temp)/2-input$base),
-        gdd_c = ((max_temp_c + min_temp_c)/2-((input$base - 32) * 5/9)),
+        gdd_f = ((max_temp + min_temp) / 2 - 50),
+        gdd_c = ((max_temp_c + min_temp_c) / 2 - 10),
       ) %>%
       mutate(
         gdd_f = case_when(gdd_f <= 0 ~ 0, gdd_f > 0 ~ gdd_f),
-        gdd_c = case_when(gdd_c <= 0 ~ 0, gdd_c > 0 ~ gdd_c)
+        gdd_c = case_when(gdd_c <= 0 ~ 0, gdd_c > 0 ~ gdd_c),
+        cumulative_gdd_f = cumsum(gdd_f),
+        cumulative_gdd_c = cumsum(gdd_c)
       )
   })
 
@@ -218,6 +257,23 @@ server <- function(input, output, session) {
     total_days <- difftime(input$date_range[2] + 1, input$date_range[1], units = "days")
     HTML(sprintf("%s days | %s observations", total_days, nrow(filtered_weather())))
   })
+
+  # Query database to get data with all variables
+  download_data <- reactive({
+    date2 <- input$date_range_download[2] + 1
+    query <- stringr::str_interp('{ "date_and_time": { "$gte": "${input$date_range_download[1]}", "$lte": "${date2}"} }')
+    load_data(query)
+  })
+
+  # Download data for selected date range (all variables)
+  output$download <- downloadHandler(
+    filename = function() {
+      paste0("data-", input$date_range_download[1], "--", input$date_range_download[2], ".csv")
+    },
+    content = function(file) {
+      write.csv(download_data(), file, row.names = FALSE)
+    }
+  )
 
   # Display average temp for the selected date
   output$temp_info <- renderInfoBox({
@@ -284,7 +340,7 @@ server <- function(input, output, session) {
 
   # Display a line plot for temperature
   output$line_temp <- renderPlotly({
-    ggplot(filtered_weather(), aes(x = `date and time`)) +
+    ggplot(filtered_weather(), aes(x = date_and_time)) +
       geom_line(aes(y = temp_f, color = "Temperature")) +
       geom_line(aes(y = heat_index_f, color = "Heat Index")) +
       geom_line(aes(y = windchill_f, color = "Windchill")) +
@@ -294,24 +350,39 @@ server <- function(input, output, session) {
 
   # Display a line plot for soil moisture
   output$line_soil <- renderPlotly({
-    ggplot(filtered_weather(), aes(x = `date and time`)) +
+    ggplot(filtered_weather(), aes(x = date_and_time)) +
       geom_line(aes(y = soil_moisture_1)) +
       labs(x = NULL, y = "Moisture")
   })
 
+  # Getting all weather data
+  all_weather <- reactive({
+    fields <- '{"date_and_time":1, "date":1, "soil_moisture_1": "$davis_current_observation.soil_moisture_1"}'
+    load_data(qry = NULL, fields)
+  })
+
+  # Most recent date will be today's date if data is available for that date
+  most_recent_date <- reactive({
+    temp <- Sys.Date()
+    if (temp > max_calendar_date) {
+      temp <- max_calendar_date
+    }
+    temp
+  })
+
   # Display daily moisture average for all days of the week
   output$week_soil <- renderPlotly({
-    df_temp <- data.frame(date = weather$date, moisture = weather$soil_moisture_1)
+    df_temp <- all_weather()
 
     by_day <- df_temp %>%
       group_by(date) %>%
-      summarise(avg_moisture = mean(moisture))
+      summarise(avg_moisture = mean(soil_moisture_1))
 
     the_day <- df_temp[df_temp$date == most_recent_date(), ]
 
-    day_avg <- round(mean(the_day$moisture), 0)
+    day_avg <- round(mean(the_day$soil_moisture_1, na.rm = TRUE), 0)
 
-    all_time_avg <- round(mean(weather$soil_moisture_1), 0)
+    all_time_avg <- round(mean(df_temp$soil_moisture_1, na.rm = TRUE), 0)
 
     ggplot() +
       geom_col(by_day, mapping = aes(x = date, y = avg_moisture)) +
@@ -325,19 +396,30 @@ server <- function(input, output, session) {
     datatable(filtered_weather(), options = list(
       scrollX = TRUE,
       searching = FALSE,
-      pagelength = 50
+      pagelength = 25
     ))
   })
 
   # Display a line plot for growing degree days
   output$growing_temp <- renderPlotly({
-    scale <- "gdd_f"
-    if(input$scale == 2){
-      scale <- "gdd_c"
+    scale <- "cumulative_gdd_f"
+    if (input$scale == 2) {
+      scale <- "cumulative_gdd_c"
     }
     ggplot(grow_deg_day(), aes(x = date)) +
       geom_line(aes_string(y = scale)) +
       labs(x = NULL, y = "Degrees")
+  })
+
+  # Displaying GDD data
+  output$gdd_data <- renderDT({
+    datatable(grow_deg_day(),
+      options = list(
+        scrollX = TRUE,
+        searching = FALSE,
+        pagelength = 25
+      )
+    )
   })
 }
 
