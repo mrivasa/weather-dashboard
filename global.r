@@ -2,6 +2,8 @@ library(shiny)
 library(shinyWidgets)
 library(shinydashboard)
 library(shinyBS)
+library(bslib)
+library(htmlwidgets)
 library(fontawesome)
 library(readr)
 library(dplyr)
@@ -32,6 +34,12 @@ weather_coll <- mongo(collection = "sauWeather", db = "weatherdata", url = conne
 # JSON to be used in "project" to return all fields from mongodb database
 all_fields <- read_file("data/all_fields.json")
 
+# JSON bo be use in "project" to return fields needed for weather details tab
+weather_fields <- read_file("data/weather_fields.json")
+
+# Defining 60 mins cache
+cache_30mins <- cachem::cache_mem(max_age = 30 * 60)
+
 # Getting data from database using the provided query
 # If list of fields is not provided it will returl all fields from database
 load_data <- function(qry, return_fields = all_fields) {
@@ -57,6 +65,18 @@ load_date <- function(sort_direction) {
 }
 # Using cache for loading max and min
 get_max_or_min_date <- memoise(load_date)
+
+# Get the most recent observation from database
+load_latest_obs <- function() {
+    df <- weather_coll$find(fields = weather_fields, sort = '{ "date_and_time": -1 }', limit = 1)
+    df <- df %>% mutate(
+        date_and_time = ymd_hms(date_and_time),
+        #date_and_time = as_datetime(date_and_time, format = "%Y-%m-%dT%H:%M:%S"),
+        date = as.Date(date, format = "%m/%d/%Y")
+    )
+    return(df)
+}
+get_latest_obs <- memoise(load_latest_obs, cache = cache_30mins)
 
 # Getting list of unique years from the database
 unique_years <- function() {

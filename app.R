@@ -21,8 +21,8 @@ ui <- dashboardPage(
   ),
   dashboardSidebar(
     sidebarMenu(
-      menuItem("Weather Details", tabName = "selected_dates", icon = icon("umbrella"), selected = TRUE),
-      menuItem("Grow Weather", tabName = "grow_weather", icon = icon("leaf")),
+      menuItem("Recent Weather", tabName = "selected_dates", icon = icon("umbrella"), selected = TRUE),
+      menuItem("Yearly Comparisons", tabName = "grow_weather", icon = icon("leaf")),
       menuItem("Download Data", tabName = "download_data", icon = icon("download"))
     )
   ),
@@ -65,7 +65,15 @@ ui <- dashboardPage(
         ),
         conditionalPanel(
           condition = "output.total_rows > 0",
-          fluidRow(
+          panel(
+            htmlOutput("latest_obs_date", class = "panel-title"),
+            infoBoxOutput("latest_temp_box", width = 3),
+            infoBoxOutput("latest_hum_box", width = 3),
+            infoBoxOutput("latest_rain_box", width = 3),
+            infoBoxOutput("latest_soil_box", width = 3)
+          ),
+          panel(
+            tags$div("Selected Date Range", class = "panel-title"),
             infoBoxOutput("temp_info", width = 3),
             infoBoxOutput("humidity_info", width = 3),
             infoBoxOutput("rain_info", width = 3),
@@ -197,7 +205,7 @@ server <- function(input, output, session) {
   filtered_weather <- reactive({
     date2 <- input$date_range[2] + 1
     query <- stringr::str_interp('{ "date_and_time": { "$gte": "${input$date_range[1]}", "$lte": "${date2}"} }')
-    load_data(query)
+    load_data(query, weather_fields)
   }) %>%
     bindCache(input$date_range)
 
@@ -258,6 +266,11 @@ server <- function(input, output, session) {
     HTML(sprintf("%s days | %s observations", total_days, nrow(filtered_weather())))
   })
 
+  output$latest_obs_date <- renderUI({
+    obs <- get_latest_obs()
+    HTML(paste0("Most Recent Observation: ", format(obs$date_and_time, format = "%A, %B %d, %Y %I:%M %p")))
+  })
+
   # Query database to get data with all variables
   download_data <- reactive({
     date2 <- input$date_range_download[2] + 1
@@ -274,6 +287,56 @@ server <- function(input, output, session) {
       write.csv(download_data(), file, row.names = FALSE)
     }
   )
+
+  # --- Latest observation ---
+  output$latest_temp_box <- renderInfoBox({
+    obs <- get_latest_obs()
+    box_color <- "light-blue"
+    if (obs$temp_f >= 80) {
+      box_color <- "yellow"
+    }
+    infoBox(
+      title = "Temperature",
+      value = paste0(obs$temp_f, " °F"),
+      color = box_color,
+      fill = TRUE,
+      icon = icon("temperature-half")
+    )
+  })
+
+  output$latest_hum_box <- renderInfoBox({
+    obs <- get_latest_obs()
+    infoBox(
+      title = "Relative Humidity",
+      value = paste(obs$relative_humidity, " %"),
+      icon = icon("droplet"),
+      color = "olive",
+      fill = TRUE
+    )
+  })
+
+  output$latest_rain_box <- renderInfoBox({
+    obs <- get_latest_obs()
+    infoBox(
+      title = "Rain",
+      value = paste(obs$rain_rate_in_per_hr, " in"),
+      subtitle = paste("Day total: ", obs$rain_day_in, " in"),
+      icon = icon("cloud-rain"),
+      color = "aqua",
+      fill = TRUE
+    )
+  })
+
+  output$latest_soil_box <- renderInfoBox({
+    obs <- get_latest_obs()
+    infoBox(
+      title = "Soil Moisture",
+      value = paste(obs$soil_moisture_1, " cb"),
+      icon = icon("water"),
+      color = "maroon",
+      fill = TRUE
+    )
+  })
 
   # Display average temp for the selected date
   output$temp_info <- renderInfoBox({
@@ -345,14 +408,14 @@ server <- function(input, output, session) {
       geom_line(aes(y = heat_index_f, color = "Heat Index")) +
       geom_line(aes(y = windchill_f, color = "Windchill")) +
       theme(legend.position = "top") +
-      labs(x = NULL, y = "Temperature", color = "")
+      labs(x = NULL, y = "Degrees (°F)", color = "")
   })
 
   # Display a line plot for soil moisture
   output$line_soil <- renderPlotly({
     ggplot(filtered_weather(), aes(x = date_and_time)) +
       geom_line(aes(y = soil_moisture_1)) +
-      labs(x = NULL, y = "Moisture")
+      labs(x = NULL, y = "Centibars (cb)")
   })
 
   # Getting all weather data
@@ -361,34 +424,25 @@ server <- function(input, output, session) {
     load_data(qry = NULL, fields)
   })
 
-  # Most recent date will be today's date if data is available for that date
-  most_recent_date <- reactive({
-    temp <- Sys.Date()
-    if (temp > max_calendar_date) {
-      temp <- max_calendar_date
-    }
-    temp
-  })
-
   # Display daily moisture average for all days of the week
   output$week_soil <- renderPlotly({
     df_temp <- all_weather()
+    obs <- get_latest_obs()
 
     by_day <- df_temp %>%
       group_by(date) %>%
       summarise(avg_moisture = mean(soil_moisture_1))
 
-    the_day <- df_temp[df_temp$date == most_recent_date(), ]
-
-    day_avg <- round(mean(the_day$soil_moisture_1, na.rm = TRUE), 0)
+    day_avg <- round((obs$soil_moisture_1_day_high + obs$soil_moisture_1_day_low)/2, 0)
+    #day_avg <- round(mean(the_day$soil_moisture_1, na.rm = TRUE), 0)
 
     all_time_avg <- round(mean(df_temp$soil_moisture_1, na.rm = TRUE), 0)
 
     ggplot() +
       geom_col(by_day, mapping = aes(x = date, y = avg_moisture)) +
-      geom_hline(aes(yintercept = day_avg, color = "Day Average")) +
+      geom_hline(aes(yintercept = day_avg, color = "Recent Obs.")) +
       geom_hline(aes(yintercept = all_time_avg, color = "All-time Average")) +
-      labs(color = NULL, x = NULL, y = "Average Moisture")
+      labs(color = NULL, x = NULL, y = "Centibars (cb)")
   })
 
   # Display filtered data

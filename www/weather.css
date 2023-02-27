@@ -22,11 +22,14 @@ html {
     background-color: white;
     margin: 0 20px;
 }
-.panel-title {
-    font-size: 16pt;
+.panel-title, .box-title {
+    font-size: 14pt;
     font-weight: 500;
     color: #36454F;
-    margin-bottom: 5px;
+    margin-bottom: 10px;
+}
+.box-title{
+    text-align: center;
 }
 #date_range_header {
     font-weight: 400;
@@ -34,19 +37,8 @@ html {
 #date_range {
     margin-bottom: 10px;
 }
-.info-box-text {
-    font-weight: 500;
-}
-.info-box-number {
-    font-size: 21px;
-}
 #input_controls div{
     margin-bottom: 5px;
-}
-.navbar-nav>.messages-menu>.dropdown-menu>li .menu>li>a {
-    color: #000000;
-    /* overflow: hidden; */
-    white-space: normal !important;
 }
 #more-info-list {
     list-style: none;
