@@ -50,3 +50,6 @@ rsconnect/
 
 # Config files
 conf/*
+
+# MacOS files
+.DS_Store
