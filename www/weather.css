@@ -46,3 +46,10 @@ html {
 #more-info-list li {
     margin-bottom: 5px;
 }
+.obs-panel {
+    background-color: #303030;
+}
+.obs-title {
+    color: #dedede;
+    font-weight: 600;
+}

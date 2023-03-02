@@ -18,6 +18,7 @@ library(config)
 library(mongolite)
 library(readr)
 library(memoise)
+library(shinybusy)
 
 # Getting all variables needed to load data from DB
 config_file <- config::get(file = "conf/config.yml")

@@ -5,7 +5,7 @@ source("global.r", local = TRUE)
 max_calendar_date <- get_max_or_min_date(-1)
 min_calendar_date <- get_max_or_min_date(1)
 
-# UI definition
+#--- UI: Page definition
 ui <- dashboardPage(
   skin = "green",
   dashboardHeader(
@@ -19,13 +19,15 @@ ui <- dashboardPage(
       class = "dropdown"
     )
   ),
+  #--- UI: Sidebar (menu options)
   dashboardSidebar(
     sidebarMenu(
       menuItem("Recent Weather", tabName = "selected_dates", icon = icon("umbrella"), selected = TRUE),
-      menuItem("Yearly Comparisons", tabName = "grow_weather", icon = icon("leaf")),
+      menuItem("Yearly Comparisons", tabName = "yearly_comparisons", icon = icon("leaf")),
       menuItem("Download Data", tabName = "download_data", icon = icon("download"))
     )
   ),
+  #--- UI: Main page
   dashboardBody(
     tags$head(
       tags$link(
@@ -37,13 +39,32 @@ ui <- dashboardPage(
         src = "scroll.js"
       )
     ),
+    add_loading_state(
+      c(".html-widget-output"), # "#latest_temp_box", "#latest_hum_box", "#latest_rain_box", "#latest_soil_box"),
+      text = NULL,
+      svgColor = "#89a0b3",
+      spinner = "pulse",
+      timeout = 800,
+      backgroundColor = "rgba(30,30,30,0.8)",
+      svgSize = "28px",
+    ),
     tabItems(
+      #--- UI: Recent weather tab
       tabItem(
         tabName = "selected_dates",
-        wellPanel(
-          fluidRow(
+        conditionalPanel(
+          condition = "output.total_rows > 0",
+          panel(
+            htmlOutput("latest_obs_date", class = "panel-title obs-title"),
+            infoBoxOutput("latest_temp_box", width = 3),
+            infoBoxOutput("latest_hum_box", width = 3),
+            infoBoxOutput("latest_rain_box", width = 3),
+            infoBoxOutput("latest_soil_box", width = 3),
+            class = "obs-panel"
+          ),
+          panel(
             column(
-              width = 6,
+              width = 4,
               dateRangeInput("date_range",
                 label = span("Date Range:", id = "date_range_header"),
                 start = as.Date(max_calendar_date) - 6,
@@ -56,21 +77,11 @@ ui <- dashboardPage(
               id = "input_controls"
             ),
             column(
-              width = 6,
+              width = 8,
               br(),
               htmlOutput("display_selected_date"),
               htmlOutput("display_summary")
             )
-          )
-        ),
-        conditionalPanel(
-          condition = "output.total_rows > 0",
-          panel(
-            htmlOutput("latest_obs_date", class = "panel-title"),
-            infoBoxOutput("latest_temp_box", width = 3),
-            infoBoxOutput("latest_hum_box", width = 3),
-            infoBoxOutput("latest_rain_box", width = 3),
-            infoBoxOutput("latest_soil_box", width = 3)
           ),
           panel(
             tags$div("Selected Date Range", class = "panel-title"),
@@ -129,32 +140,14 @@ ui <- dashboardPage(
           )
         )
       ),
+      #--- UI: Yearly comparisons
       tabItem(
-        tabName = "grow_weather",
-        wellPanel(
-          fluidRow(
-            column(
-              width = 4,
-              selectInput(
-                "year",
-                label = "Select Year",
-                choices = get_unique_years()
-              )
-            ),
-            column(
-              width = 4,
-              radioButtons(
-                "scale",
-                label = "Temperature Scale",
-                choices = list("Farenheit" = 1, "Celsius" = 2),
-                selected = 1,
-                inline = TRUE
-              )
-            ),
-            column(
-              width = 12,
-              tags$p("Note: Cumulative Growing Degree Days Data are not accurate for 2019 or for February 4, 2020 - December 31, 2020 due to incomplete data.")
-            )
+        tabName = "yearly_comparisons",
+        panel(
+          selectInput(
+            "year",
+            label = "Select Year",
+            choices = get_unique_years()
           )
         ),
         fluidRow(
@@ -176,6 +169,7 @@ ui <- dashboardPage(
           )
         )
       ),
+      #--- UI: Download data
       tabItem(
         tabName = "download_data",
         wellPanel(
@@ -201,30 +195,7 @@ ui <- dashboardPage(
 
 # Server code
 server <- function(input, output, session) {
-  # Filter dataframe based on selcted date range
-  filtered_weather <- reactive({
-    date2 <- input$date_range[2] + 1
-    query <- stringr::str_interp('{ "date_and_time": { "$gte": "${input$date_range[1]}", "$lte": "${date2}"} }')
-    load_data(query, weather_fields)
-  }) %>%
-    bindCache(input$date_range)
-
-  # This reactive function is used to show/hide panels when data is available
-  output$total_rows <- reactive({
-    nrow(filtered_weather())
-  })
-
-  # Taken from: https://shiny.rstudio.com/articles/dynamic-ui.html
-  outputOptions(output, "total_rows", suspendWhenHidden = FALSE)
-
-  # Filter data by selected year
-  filtered_year <- reactive({
-    query <- stringr::str_interp('{ "year": "${input$year}" }')
-    fields <- '{"date_and_time":1, "date": 1, "temp_f": { "$ifNull": ["$temp_f", "$davis_current_observation.temp_in_f"] }, "temp_c": { "$ifNull": ["$temp_c", 0] } }'
-    load_data(query, fields)
-  })
-
-  # "On-click" event listener for more_info button in header
+  #--- "On-click" event listener for more_info button in header to show modal with more info
   observeEvent(input$more_info, {
     showModal(modalDialog(
       includeHTML("www/moreinfo.html"),
@@ -233,6 +204,30 @@ server <- function(input, output, session) {
       footer = modalButton("Got It!")
     ))
   })
+
+  #--- This reactive function and "outputOptions" is used to show/hide panels based on data availability
+  #--- Taken from: https://shiny.rstudio.com/articles/dynamic-ui.html
+  output$total_rows <- reactive({
+    nrow(filtered_weather())
+  })
+  outputOptions(output, "total_rows", suspendWhenHidden = FALSE)
+
+  #--- Filter dataframe based on selcted date range
+  #--- Caching reactive result based on selected date range
+  filtered_weather <- reactive({
+    date2 <- input$date_range[2] + 1
+    query <- stringr::str_interp('{ "date_and_time": { "$gte": "${input$date_range[1]}", "$lte": "${date2}"} }')
+    load_data(query, weather_fields)
+  }) %>%
+    bindCache(input$date_range)
+
+  #--- Filtering data by selected year data will be cached based on selected year
+  filtered_year <- reactive({
+    query <- stringr::str_interp('{ "year": "${input$year}" }')
+    fields <- '{"date_and_time":1, "date": 1, "temp_f": { "$ifNull": ["$temp_f", "$davis_current_observation.temp_in_f"] }, "temp_c": { "$ifNull": ["$temp_c", 0] } }'
+    load_data(query, fields)
+  }) %>%
+    bindCache(input$year)
 
   # Group by date. Calculate GDD (daily max + daily min / 2 - base)
   grow_deg_day <- reactive({
@@ -254,31 +249,36 @@ server <- function(input, output, session) {
       )
   })
 
-  # Display selected date
+  #--- Display date of the most recent observation
+  output$latest_obs_date <- renderUI({
+    obs <- get_latest_obs()
+    HTML(paste0("Most Recent Observation: ", format(obs$date_and_time, format = "%A, %B %d, %Y %I:%M %p")))
+  })
+
+  #--- Display selected date range
   output$display_selected_date <- renderUI({
     start_date <- format(input$date_range[1], format = "%A, %B %d, %Y")
     end_date <- format(input$date_range[2], format = "%A, %B %d, %Y")
     HTML(sprintf("[%s] to [%s]", start_date, end_date))
   })
 
+  #--- Display how many observatios are in the selected date range
+  #--- along with how many days are included in the selected date range
   output$display_summary <- renderUI({
     total_days <- difftime(input$date_range[2] + 1, input$date_range[1], units = "days")
     HTML(sprintf("%s days | %s observations", total_days, nrow(filtered_weather())))
   })
 
-  output$latest_obs_date <- renderUI({
-    obs <- get_latest_obs()
-    HTML(paste0("Most Recent Observation: ", format(obs$date_and_time, format = "%A, %B %d, %Y %I:%M %p")))
-  })
-
-  # Query database to get data with all variables
+  #--- Query database to get data with all variables
+  #--- used in the download option
   download_data <- reactive({
     date2 <- input$date_range_download[2] + 1
     query <- stringr::str_interp('{ "date_and_time": { "$gte": "${input$date_range_download[1]}", "$lte": "${date2}"} }')
     load_data(query)
   })
 
-  # Download data for selected date range (all variables)
+  #--- Download data for selected date range (all variables)
+  #--- this is the "Download Data" tab
   output$download <- downloadHandler(
     filename = function() {
       paste0("data-", input$date_range_download[1], "--", input$date_range_download[2], ".csv")
@@ -288,7 +288,7 @@ server <- function(input, output, session) {
     }
   )
 
-  # --- Latest observation ---
+  # --- Latest observation boxes
   output$latest_temp_box <- renderInfoBox({
     obs <- get_latest_obs()
     box_color <- "light-blue"
@@ -320,7 +320,7 @@ server <- function(input, output, session) {
     infoBox(
       title = "Rain",
       value = paste(obs$rain_rate_in_per_hr, " in"),
-      subtitle = paste("Day total: ", obs$rain_day_in, " in"),
+      # subtitle = paste("Day total: ", obs$rain_day_in, " in"),
       icon = icon("cloud-rain"),
       color = "aqua",
       fill = TRUE
@@ -338,7 +338,7 @@ server <- function(input, output, session) {
     )
   })
 
-  # Display average temp for the selected date
+  #--- Display average temp for the selected date
   output$temp_info <- renderInfoBox({
     avg <- round(mean(filtered_weather()$temp_f, na.rm = TRUE), 0)
     min_t <- round(min(filtered_weather()$temp_f, na.rm = TRUE), 0)
@@ -357,7 +357,7 @@ server <- function(input, output, session) {
     )
   })
 
-  # Display average humidity
+  #--- Display average humidity
   output$humidity_info <- renderInfoBox({
     avg <- round(mean(filtered_weather()$relative_humidity, na.rm = TRUE), 0)
     min_h <- round(min(filtered_weather()$relative_humidity, na.rm = TRUE), 0)
@@ -372,7 +372,7 @@ server <- function(input, output, session) {
     )
   })
 
-  # Display total rain for the selected date
+  #--- Display total rain for the selected date
   output$rain_info <- renderInfoBox({
     total <- sum(filtered_weather()$rain_rate_in_per_hr)
     avg_r <- round(mean(filtered_weather()$rain_day_in), 2)
@@ -386,7 +386,7 @@ server <- function(input, output, session) {
     )
   })
 
-  # Display average soil moisture for selected date
+  #--- Display average soil moisture for selected date
   output$soil_info <- renderInfoBox({
     avg <- round(mean(filtered_weather()$soil_moisture_1, na.rm = TRUE), 0)
     max_s <- round(max(filtered_weather()$soil_moisture_1, na.rm = TRUE), 0)
@@ -401,7 +401,7 @@ server <- function(input, output, session) {
     )
   })
 
-  # Display a line plot for temperature
+  #--- Display a line plot for temperature
   output$line_temp <- renderPlotly({
     ggplot(filtered_weather(), aes(x = date_and_time)) +
       geom_line(aes(y = temp_f, color = "Temperature")) +
@@ -411,20 +411,20 @@ server <- function(input, output, session) {
       labs(x = NULL, y = "Degrees (°F)", color = "")
   })
 
-  # Display a line plot for soil moisture
+  #--- Display a line plot for soil moisture
   output$line_soil <- renderPlotly({
     ggplot(filtered_weather(), aes(x = date_and_time)) +
       geom_line(aes(y = soil_moisture_1)) +
       labs(x = NULL, y = "Centibars (cb)")
   })
 
-  # Getting all weather data
+  #--- Getting all weather data
   all_weather <- reactive({
     fields <- '{"date_and_time":1, "date":1, "soil_moisture_1": "$davis_current_observation.soil_moisture_1"}'
     load_data(qry = NULL, fields)
   })
 
-  # Display daily moisture average for all days of the week
+  #--- Display daily moisture over time
   output$week_soil <- renderPlotly({
     df_temp <- all_weather()
     obs <- get_latest_obs()
@@ -433,8 +433,7 @@ server <- function(input, output, session) {
       group_by(date) %>%
       summarise(avg_moisture = mean(soil_moisture_1))
 
-    day_avg <- round((obs$soil_moisture_1_day_high + obs$soil_moisture_1_day_low)/2, 0)
-    #day_avg <- round(mean(the_day$soil_moisture_1, na.rm = TRUE), 0)
+    day_avg <- round((obs$soil_moisture_1_day_high + obs$soil_moisture_1_day_low) / 2, 0)
 
     all_time_avg <- round(mean(df_temp$soil_moisture_1, na.rm = TRUE), 0)
 
@@ -445,7 +444,7 @@ server <- function(input, output, session) {
       labs(color = NULL, x = NULL, y = "Centibars (cb)")
   })
 
-  # Display filtered data
+  #--- Display data returned from selected date
   output$weather_data <- renderDT({
     datatable(filtered_weather(), options = list(
       scrollX = TRUE,
@@ -457,9 +456,9 @@ server <- function(input, output, session) {
   # Display a line plot for growing degree days
   output$growing_temp <- renderPlotly({
     scale <- "cumulative_gdd_f"
-    if (input$scale == 2) {
-      scale <- "cumulative_gdd_c"
-    }
+    # if (input$scale == 2) {
+    #   scale <- "cumulative_gdd_c"
+    # }
     ggplot(grow_deg_day(), aes(x = date)) +
       geom_line(aes_string(y = scale)) +
       labs(x = NULL, y = "Degrees")
