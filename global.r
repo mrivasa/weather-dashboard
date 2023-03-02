@@ -83,8 +83,12 @@ get_latest_obs <- memoise(load_latest_obs, cache = cache_30mins)
 unique_years <- function() {
     years <- weather_coll$distinct(key = "year")
     # Removing 2019 and 2022 because of incomplete data
-    unique_years <- as.list(years[!(years %in% c("2019", "2022"))])
+    # unique_years <- as.list(years[!(years %in% c("2019", "2022"))])
+    unique_years <- as.list(years)
     return(unique_years)
 }
 # Using cache for loading unique years
 get_unique_years <- memoise(unique_years)
+
+# National weather sevice historical data
+nws <- as.data.frame(read_csv("data/nws_data.csv"))

@@ -5,6 +5,9 @@ source("global.r", local = TRUE)
 max_calendar_date <- get_max_or_min_date(-1)
 min_calendar_date <- get_max_or_min_date(1)
 
+# Plot size options
+options(repr.plot.width = 5, repr.plot.height = 2)
+
 #--- UI: Page definition
 ui <- dashboardPage(
   skin = "green",
@@ -23,7 +26,7 @@ ui <- dashboardPage(
   dashboardSidebar(
     sidebarMenu(
       menuItem("Recent Weather", tabName = "selected_dates", icon = icon("umbrella"), selected = TRUE),
-      menuItem("Yearly Comparisons", tabName = "yearly_comparisons", icon = icon("leaf")),
+      menuItem("Yearly Comparison", tabName = "yearly_comparison", icon = icon("leaf")),
       menuItem("Download Data", tabName = "download_data", icon = icon("download"))
     )
   ),
@@ -142,20 +145,53 @@ ui <- dashboardPage(
       ),
       #--- UI: Yearly comparisons
       tabItem(
-        tabName = "yearly_comparisons",
+        tabName = "yearly_comparison",
         panel(
-          selectInput(
-            "year",
-            label = "Select Year",
-            choices = get_unique_years()
+          fluidRow(
+            column(
+              width = 4,
+              selectInput(
+                "year",
+                label = "Select Year",
+                choices = get_unique_years(),
+                selected = year(max_calendar_date)
+              ),
+            ),
+            column(
+              width = 4,
+              radioButtons(
+                "temp_scale",
+                label = "Temperature Scale",
+                choices = list("Farenheit" = 1, "Celsius" = 2),
+                selected = 1,
+                inline = TRUE
+              )
+            ),
+            column(
+              width = 4,
+              radioButtons(
+                "precip_scale",
+                label = "Precipitation Scale",
+                choices = list("Inches" = 1, "Centimeters" = 2),
+                selected = 1,
+                inline = TRUE
+              )
+            )
           )
+        ),
+        alert(
+          stat = "info",
+          tags$p("Note: Cumulative Yearly Precipitation is not accurate for 2019
+              or for February 4, 2020 - December 31, 2020 due to incomplete data.
+              30 year average was calculated from data obtained from the National
+              Weather Service's weather station at the Chattanooga Airport.")
         ),
         fluidRow(
           column(
             width = 12,
             panel(
-              tags$p("Growing Degree Days", class = "panel-title"),
-              plotlyOutput("growing_temp")
+              tags$p("Average Temperature", class = "panel-title"),
+              plotlyOutput("avg_temp")
             )
           )
         ),
@@ -163,8 +199,8 @@ ui <- dashboardPage(
           column(
             width = 12,
             panel(
-              tags$p("Growing Degree Days - Data", class = "panel-title"),
-              DTOutput("gdd_data")
+              tags$p("Average Cumulative Precipitation", class = "panel-title"),
+              plotlyOutput("avg_precip")
             )
           )
         )
@@ -220,14 +256,6 @@ server <- function(input, output, session) {
     load_data(query, weather_fields)
   }) %>%
     bindCache(input$date_range)
-
-  #--- Filtering data by selected year data will be cached based on selected year
-  filtered_year <- reactive({
-    query <- stringr::str_interp('{ "year": "${input$year}" }')
-    fields <- '{"date_and_time":1, "date": 1, "temp_f": { "$ifNull": ["$temp_f", "$davis_current_observation.temp_in_f"] }, "temp_c": { "$ifNull": ["$temp_c", 0] } }'
-    load_data(query, fields)
-  }) %>%
-    bindCache(input$year)
 
   # Group by date. Calculate GDD (daily max + daily min / 2 - base)
   grow_deg_day <- reactive({
@@ -320,7 +348,6 @@ server <- function(input, output, session) {
     infoBox(
       title = "Rain",
       value = paste(obs$rain_rate_in_per_hr, " in"),
-      # subtitle = paste("Day total: ", obs$rain_day_in, " in"),
       icon = icon("cloud-rain"),
       color = "aqua",
       fill = TRUE
@@ -439,7 +466,7 @@ server <- function(input, output, session) {
 
     ggplot() +
       geom_col(by_day, mapping = aes(x = date, y = avg_moisture)) +
-      geom_hline(aes(yintercept = day_avg, color = "Recent Obs.")) +
+      geom_hline(aes(yintercept = day_avg, color = format(obs$date, format = "%A, %B %d, %Y"))) +
       geom_hline(aes(yintercept = all_time_avg, color = "All-time Average")) +
       labs(color = NULL, x = NULL, y = "Centibars (cb)")
   })
@@ -453,26 +480,85 @@ server <- function(input, output, session) {
     ))
   })
 
-  # Display a line plot for growing degree days
-  output$growing_temp <- renderPlotly({
-    scale <- "cumulative_gdd_f"
-    # if (input$scale == 2) {
-    #   scale <- "cumulative_gdd_c"
-    # }
-    ggplot(grow_deg_day(), aes(x = date)) +
-      geom_line(aes_string(y = scale)) +
-      labs(x = NULL, y = "Degrees")
+  #--- Filter nws data, group by day and calculate 30 yr averages.
+  #--- Fix date format. Calcualte cumulative precipitation.
+  nws_avg <- reactive({
+    nws %>%
+      mutate(DATE = as.Date(DATE, format = "%m/%d/%Y")) %>%
+      mutate(month = month(DATE), day = day(DATE)) %>%
+      group_by(month, day) %>%
+      summarise(
+        temp_avg = mean(TAVG, na.rm = TRUE),
+        precip_avg = mean(PRCP, na.rm = TRUE)
+      ) %>%
+      mutate(calc_date = paste(month, day, input$year, sep = "/")) %>%
+      mutate(calc_date = as.Date(calc_date, format = "%m/%d/%Y")) %>%
+      mutate(cum_precip = cumsum(precip_avg))
+  }) # cum_sum resets monthly.  Change this if using line.
+
+  #--- Display a line plot for average temperature
+  output$avg_temp <- renderPlotly({
+    daily_avg_temp <- filtered_year() %>%
+      # mutate(date = as.Date(date, format = "%Y-%m-%d")) %>%
+      group_by(date) %>%
+      summarise(mean_daily_temp_f = mean(temp_f))
+    nws_average <- nws_avg()
+    temp_choice_1 <- daily_avg_temp$mean_daily_temp_f
+    if (input$temp_scale == 2) {
+      temp_choice_1 <- ((daily_avg_temp$mean_daily_temp_f - 32) * 5 / 9)
+    }
+    temp_choice_2 <- nws_average$temp_avg
+    if (input$temp_scale == 2) {
+      temp_choice_2 <- ((nws_average$temp_avg - 32) * 5 / 9)
+    }
+    ggplot() +
+      geom_line(data = daily_avg_temp, aes(x = date, y = temp_choice_1, color = paste(input$year))) +
+      geom_line(data = nws_average, aes(x = calc_date, y = temp_choice_2, color = "30 Year Average")) +
+      theme(legend.position = "top") +
+      labs(x = NULL, y = "Degrees", color = "")
   })
 
-  # Displaying GDD data
-  output$gdd_data <- renderDT({
-    datatable(grow_deg_day(),
-      options = list(
-        scrollX = TRUE,
-        searching = FALSE,
-        pagelength = 25
-      )
-    )
+  #--- Filtering data by selected year data will be cached based on selected year
+  filtered_year <- reactive({
+    query <- stringr::str_interp('{ "year": "${input$year}" }')
+    fields <- '{"_id":0, "date_and_time":1, "date": 1, "temp_f": { "$ifNull": ["$temp_f", "$davis_current_observation.temp_in_f"] }, "temp_c": { "$ifNull": ["$temp_c", 0] }, "rain_day_in": "$davis_current_observation.rain_day_in" }'
+    load_data(query, fields)
+  }) %>%
+    bindCache(input$year)
+
+  #--- Display a line plot for cumulative yearly precipitation
+  output$avg_precip <- renderPlotly({
+    cum_precipitation <- filtered_year() %>%
+      mutate(month = month(date), day = day(date)) %>%
+      group_by(month, day) %>%
+      summarise(mean_rain_day_in = mean(rain_day_in)) %>%
+      mutate(date = paste(month, day, input$year, sep = "/")) %>%
+      mutate(date = as.Date(date, format = "%m/%d/%Y")) %>%
+      mutate(cum_precip = cumsum(mean_rain_day_in))
+
+    nws_average <- nws_avg()
+
+    precip_choice_1 <- cum_precipitation$cum_precip
+    if (input$precip_scale == 2) {
+      precip_choice_1 <- (cum_precipitation$cum_precip * 2.54)
+    }
+    precip_choice_2 <- nws_average$cum_precip
+    if (input$precip_scale == 2) {
+      precip_choice_2 <- (nws_average$cum_precip * 2.54)
+    }
+
+    #    ggplot() +
+    #      geom_line(data = cum_precipitation, aes(x = date, y = precip_choice_1, color = "Cumulative Precipitation")) +
+    #      geom_line(data = nws_average, aes(x = calc_date, y = precip_choice_2, color = "30 Year Average")) +
+    #    theme(legend.position = "top") +
+    #    labs(x = NULL, y = "Precipitation", color = "")
+
+    ggplot() +
+      geom_col(data = cum_precipitation, aes(x = date, y = precip_choice_1, fill = paste(input$year), alpha = 0.2)) +
+      geom_col(data = nws_average, aes(x = calc_date, y = precip_choice_2, fill = "30 Year Average", alpha = 0.15)) +
+      geom_col(position = "dodge") +
+      theme(legend.position = "top", legend.title = NULL) +
+      labs(x = NULL, y = "Precipitation", fill = "")
   })
 }
 
