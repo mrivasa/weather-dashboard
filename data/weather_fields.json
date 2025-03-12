@@ -1,16 +1,22 @@
 {
-  "_id": 0,
   "relative_humidity": 1,
-  "temp_f": 1,
-  "windchill_f": 1,
-  "date_and_time": 1,
-  "date": 1,
-  "heat_index_f": 1,
-  "rain_day_in": "$davis_current_observation.rain_day_in",
-  "rain_rate_in_per_hr": "$davis_current_observation.rain_rate_in_per_hr",
-  "soil_moisture_1": "$davis_current_observation.soil_moisture_1",
-  "sunrise": "$davis_current_observation.sunrise",
-  "sunset": "$davis_current_observation.sunset",
-  "soil_moisture_1_day_high": "$davis_current_observation.soil_moisture_1_day_high",
-  "soil_moisture_1_day_low": "$davis_current_observation.soil_moisture_1_day_low"
+    "temp_f": 1,
+    "windchill_f": 1,
+    "date_and_time": 1,
+    "date": 1,
+    "heat_index_f": 1,
+    "rain_day_in": "$davis_current_observation.rain_day_in",
+    "rain_rate_in_per_hr": "$davis_current_observation.rain_rate_in_per_hr",
+    "sunrise": "$davis_current_observation.sunrise",
+    "sunset": "$davis_current_observation.sunset",
+    "soil_moisture_1": {
+        "$ifNull": ["$davis_current_observation.soil_moisture_1", "NA"]
+    },
+    "soil_moisture_1_day_high": {
+        "$ifNull": ["$davis_current_observation.soil_moisture_1_day_high", "NA"]
+    },
+    "soil_moisture_1_day_low": {
+        "$ifNull": ["$davis_current_observation.soil_moisture_1_day_low", "NA"]
+    },
+    "_id": 0
 }
